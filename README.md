@@ -1,33 +1,172 @@
 <!-- BEGINNING OF PRE-COMMIT-OPENTOFU DOCS HOOK -->
+# Azure Private Endpoint Terraform Module
+[![Changelog](https://img.shields.io/badge/changelog-release-green.svg)](CHANGELOG.md) [![Notice](https://img.shields.io/badge/notice-copyright-blue.svg)](NOTICE) [![Apache V2 License](https://img.shields.io/badge/license-Apache%20V2-orange.svg)](LICENSE) [![OpenTofu Registry](https://img.shields.io/badge/opentofu-registry-yellow.svg)](https://search.opentofu.org/module/cloudastro/private-endpoint/azurerm/)
 
+This module is designed to manage Manages a Private Endpoint.
+
+Azure Private Endpoint is a network interface that connects you privately and securely to a service powered by Azure Private Link. Private Endpoint uses a private IP address from your VNet, effectively bringing the service into your VNet. The service could be an Azure service such as Azure Storage, SQL, etc. or your own Private Link Service.
+
+# Features
+
+- **Private Connectivity:** Provides secure, private access to Azure services over a private IP address.
+- **Azure Private Link Integration:** Connects to supported Azure PaaS services and custom services using Private Link.
+- **DNS Configuration:** Supports automatic or manual DNS setup for private endpoint name resolution.
+- **Network Security Integration:** Works with Network Security Groups (NSGs) and role-based access control (RBAC) for traffic and resource management.
+
+# Example Usage
+This example demonstrates how to use the `terraform-azurerm-private-endpoint` module to create a Private Endpoint and associate it to e private dns.
 
 ```hcl
+resource "azurerm_resource_group" "example" {
+  name     = "rg-privateendpoint-example"
+  location = "germanywestcentral"
+}
 
+module "vnet" {
+  source              = "CloudAstro/virtual-network/azurerm"
+  name                = "vnet"
+  location            = azurerm_resource_group.example.location
+  resource_group_name = azurerm_resource_group.example.name
+  address_space       = ["10.20.0.0/24"]
+}
+
+module "subnet" {
+  source               = "CloudAstro/subnet/azurerm"
+  name                 = "snet-example"
+  resource_group_name  = azurerm_resource_group.example.name
+  virtual_network_name = module.vnet.virtual_network.name
+  address_prefixes     = ["10.20.0.0/25"]
+}
+
+resource "azurerm_storage_account" "example" {
+  name                     = "examplestorageacct111" # must be globally unique, lowercase
+  resource_group_name      = azurerm_resource_group.example.name
+  location                 = azurerm_resource_group.example.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+}
+
+resource "azurerm_private_dns_zone" "example" {
+  name                = "privatelink.blob.core.windows.net"
+  resource_group_name = azurerm_resource_group.example.name
+}
+
+module "private_endpoint" {
+  source                        = "../../"
+  name                          = "example-private-endpoint"
+  resource_group_name           = azurerm_resource_group.example.name
+  location                      = azurerm_resource_group.example.location
+  subnet_id                     = module.subnet.subnet.id
+  custom_network_interface_name = "custom-nic"
+
+  private_dns_zone_group = {
+    dns_zone_group = {
+      private_dns_zone_ids = [azurerm_private_dns_zone.example.id]
+      name                 = "example_group"
+    }
+  }
+
+  private_service_connection = {
+    name                           = "example-connection"
+    private_connection_resource_id = azurerm_storage_account.example.id
+    is_manual_connection           = false
+    subresource_names              = ["blob"]
+  }
+
+  ip_configurations = {
+    ipconfig1 = {
+      name               = "ipconfig1"
+      member_name        = "blob"
+      subresource_name   = "blob"
+      private_ip_address = "10.20.0.10"
+    }
+  }
+
+  application_security_group = {
+    asg-https = {
+      name = "asg-https"
+    }
+    asg-smb = {
+      name = "asg-smb"
+    }
+  }
+
+  tags = {
+    env = "PE"
+  }
+}
 ```
 <!-- markdownlint-disable MD033 -->
 ## Requirements
 
-No requirements.
+| Name | Version |
+|------|---------|
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | ~> 1.9.0 |
+| <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | >= 4.0.0 |
 
 ## Providers
 
-No providers.
+| Name | Version |
+|------|---------|
+| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | >= 4.0.0 |
 
 ## Resources
 
-No resources.
+| Name | Type |
+|------|------|
+| [azurerm_application_security_group.application_security_group](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/application_security_group) | resource |
+| [azurerm_management_lock.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/management_lock) | resource |
+| [azurerm_monitor_diagnostic_setting.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) | resource |
+| [azurerm_private_endpoint.private_endpoint](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/private_endpoint) | resource |
+| [azurerm_private_endpoint_application_security_group_association.application_security_group_accociation](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/private_endpoint_application_security_group_association) | resource |
+| [azurerm_role_assignment.private_endpoint](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/role_assignment) | resource |
 
 <!-- markdownlint-disable MD013 -->
 ## Inputs
 
-No inputs.
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| <a name="input_location"></a> [location](#input\_location) | * `location` - (Required) The supported Azure location where the resource exists. Changing this forces a new resource to be created.<br/><br/>  Example Input:<pre>location = "East US"</pre> | `string` | n/a | yes |
+| <a name="input_name"></a> [name](#input\_name) | * `name` - (Required) Specifies the Name of the Private Endpoint. Changing this forces a new resource to be created.<br/><br/>  Example Input:<pre>name = "blob-private-endpoint"</pre> | `string` | n/a | yes |
+| <a name="input_private_service_connection"></a> [private\_service\_connection](#input\_private\_service\_connection) | * `private_service_connection` - (Required) Specify service connection for private endpoint<br/>  A `private_service_connection` block supports the following:<br/>    * `name` - (Required) Specifies the Name of the Private Service Connection. Changing this forces a new resource to be created.<br/>    * `is_manual_connection` - (Required) Does the Private Endpoint require Manual Approval from the remote resource owner? Changing this forces a new resource to be created.<br/>    -> **NOTE:** If you are trying to connect the Private Endpoint to a remote resource without having the correct RBAC permissions on the remote resource set this value to `true`.<br/>    * `private_connection_resource_id` - (Optional) The ID of the Private Link Enabled Remote Resource which this Private Endpoint should be connected to. One of `private_connection_resource_id` or `private_connection_resource_alias` must be specified. Changing this forces a new resource to be created. For a web app or function app slot, the parent web app should be used in this field instead of a reference to the slot itself.<br/>    * `private_connection_resource_alias` - (Optional) The Service Alias of the Private Link Enabled Remote Resource which this Private Endpoint should be connected to. One of `private_connection_resource_id` or `private_connection_resource_alias` must be specified. Changing this forces a new resource to be created.<br/>    * `subresource_names` - (Optional) A list of subresource names which the Private Endpoint is able to connect to. `subresource_names` corresponds to `group_id`. Possible values are detailed in the product [documentation](https://docs.microsoft.com/azure/private-link/private-endpoint-overview#private-link-resource) in the `Subresources` column. Changing this forces a new resource to be created.<br/>    -> **NOTE:** Some resource types (such as Storage Account) only support 1 subresource per private endpoint.<br/>    -> **NOTE:** For most Private Links one or more `subresource_names` will need to be specified, please see the linked documentation for details.<br/>    * `request_message` - (Optional) A message passed to the owner of the remote resource when the private endpoint attempts to establish the connection to the remote resource. The provider allows a maximum request message length of `140` characters, however the request message maximum length is dependent on the service the private endpoint is connected to. Only valid if `is_manual_connection` is set to `true`.<br/>    -> **NOTE:** When connected to an SQL resource the `request_message` maximum length is `128`.<br/><br/>  Example Input:<pre>private_service_connection = {<br/>    name                           = "connection1"  # Example value<br/>    private_connection_resource_id = "/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.KeyVault/vaults/<keyvault-name>"<br/>    is_manual_connection           = false  # Example value<br/>    subresource_names              = ["blob"]  # Example value<br/>    request_message                = "Please approve this connection."<br/>  }</pre> | <pre>object({<br/>    name                              = string<br/>    is_manual_connection              = bool<br/>    private_connection_resource_id    = optional(string)<br/>    private_connection_resource_alias = optional(string)<br/>    subresource_names                 = optional(set(string))<br/>    request_message                   = optional(string)<br/>  })</pre> | n/a | yes |
+| <a name="input_resource_group_name"></a> [resource\_group\_name](#input\_resource\_group\_name) | * `resource_group_name` - (Required) Specifies the Name of the Resource Group within which the Private Endpoint should exist. Changing this forces a new resource to be created.<br/><br/>  Example Input:<pre>resource_group_name = "my-resource-group"</pre> | `string` | n/a | yes |
+| <a name="input_subnet_id"></a> [subnet\_id](#input\_subnet\_id) | * `subnet_id` - (Required) The ID of the Subnet from which Private IP Addresses will be allocated for this Private Endpoint. Changing this forces a new resource to be created.<br/><br/>  Example Input:<pre>subnet_id = "/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Network/virtualNetworks/<vnet-name>/subnets/<subnet-name>"</pre> | `string` | n/a | yes |
+| <a name="input_application_security_group"></a> [application\_security\_group](#input\_application\_security\_group) | Map of Application Security Group configurations<br/>  * `application_security_group` - (Optional) Map of Application Security Group configurations<br/>  The following arguments are supported:<br/>    * `name` - (Required) Specifies the name of the Application Security Group. Changing this forces a new resource to be created.<br/>    * `resource_group_name` - (Required) The name of the resource group in which to create the Application Security Group. Changing this forces a new resource to be created.<br/>    * `location` - (Optional)  (Required) Specifies the supported Azure location where the resource exists. Changing this forces a new resource to be created.<br/>    The `timeouts` block allows you to specify [timeouts](https://www.terraform.io/language/resources/syntax#operation-timeouts) for certain actions:<br/>      * `create` - (Defaults to 30 minutes) Used when creating the Diagnostics Setting.<br/>      * `update` - (Defaults to 30 minutes) Used when updating the Diagnostics Setting.<br/>      * `read` - (Defaults to 5 minutes) Used when retrieving the Diagnostics Setting.<br/>      * `delete` - (Defaults to 30 minutes) Used when deleting the Diagnostics Setting.<br/>    * `tags` - (Optional) A mapping of tags to assign to the resource.<br/><br/>  Example Input:<pre>application_security_group = {<br/>    asg1 = {<br/>      name = "asg1"<br/>    }<br/>  }</pre> | <pre>map(object({<br/>    name                = string<br/>    resource_group_name = optional(string)<br/>    location            = optional(string)<br/>    tags                = optional(map(string))<br/>    timeouts = optional(object({<br/>      create = optional(string, "30")<br/>      update = optional(string, "30")<br/>      read   = optional(string, "5")<br/>      delete = optional(string, "30")<br/>    }))<br/>  }))</pre> | `null` | no |
+| <a name="input_custom_network_interface_name"></a> [custom\_network\_interface\_name](#input\_custom\_network\_interface\_name) | * `custom_network_interface_name` - (Optional) The custom name of the network interface attached to the private endpoint. Changing this forces a new resource to be created.<br/><br/>  Example Input:<pre>custom_network_interface_name = "my-custom-nic"</pre> | `string` | `null` | no |
+| <a name="input_diagnostic_settings"></a> [diagnostic\_settings](#input\_diagnostic\_settings) | * `diagnostic_settings` - (Optional) Diagnostic settings for azure resources.<br/>  The following arguments are supported:<br/>    * `name` - (Required) Specifies the name of the Diagnostic Setting. Changing this forces a new resource to be created.<br/>    -> **NOTE:** If the name is set to 'service' it will not be possible to fully delete the diagnostic setting. This is due to legacy API support.<br/>    * `target_resource_id` - (Optional) The ID of an existing Resource on which to configure Diagnostic Settings. Changing this forces a new resource to be created.<br/>    * `eventhub_name` - (Optional) Specifies the name of the Event Hub where Diagnostics Data should be sent.<br/>    -> **NOTE:** If this isn't specified then the default Event Hub will be used.<br/>    * `eventhub_authorization_rule_id` - (Optional) Specifies the ID of an Event Hub Namespace Authorization Rule used to send Diagnostics Data.<br/>    -> **NOTE:** This can be sourced from [the `azurerm_eventhub_namespace_authorization_rule` resource](eventhub\_namespace\_authorization\_rule.html) and is different from [a `azurerm_eventhub_authorization_rule` resource](eventhub\_authorization\_rule.html).<br/>    -> **NOTE:** At least one of `eventhub_authorization_rule_id`, `log_analytics_workspace_id`, `partner_solution_id` and `storage_account_id` must be specified.<br/>    * `log_analytics_workspace_id` - (Optional) Specifies the ID of a Log Analytics Workspace where Diagnostics Data should be sent.<br/>    -> **NOTE:** At least one of `eventhub_authorization_rule_id`, `log_analytics_workspace_id`, `partner_solution_id` and `storage_account_id` must be specified.<br/>    * `storage_account_id` - (Optional) The ID of the Storage Account where logs should be sent.<br/>    -> **NOTE:** At least one of `eventhub_authorization_rule_id`, `log_analytics_workspace_id`, `partner_solution_id` and `storage_account_id` must be specified.<br/>    * `log_analytics_destination_type` - (Optional) Possible values are `AzureDiagnostics` and `Dedicated`. When set to `Dedicated`, logs sent to a Log Analytics workspace will go into resource specific tables, instead of the legacy `AzureDiagnostics` table.<br/>    -> **NOTE:** This setting will only have an effect if a `log_analytics_workspace_id` is provided. For some target resource type (e.g., Key Vault), this field is unconfigurable. Please see [resource types](https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables/azurediagnostics#resource-types) for services that use each method. Please [see the documentation](https://docs.microsoft.com/azure/azure-monitor/platform/diagnostic-logs-stream-log-store#azure-diagnostics-vs-resource-specific) for details on the differences between destination types.<br/>    * `partner_solution_id` - (Optional) The ID of the market partner solution where Diagnostics Data should be sent. For potential partner integrations, [click to learn more about partner integration](https://learn.microsoft.com/en-us/azure/partner-solutions/overview).<br/>    -> **NOTE:** At least one of `eventhub_authorization_rule_id`, `log_analytics_workspace_id`, `partner_solution_id` and `storage_account_id` must be specified.<br/>    An `enabled_log` block supports the following:<br/>      * `category` - (Optional) The name of a Diagnostic Log Category for this Resource.<br/>      -> **NOTE:** The Log Categories available vary depending on the Resource being used. You may wish to use [the `azurerm_monitor_diagnostic_categories` Data Source](../d/monitor\_diagnostic\_categories.html) or [list of service specific schemas](https://docs.microsoft.com/azure/azure-monitor/platform/resource-logs-schema#service-specific-schemas) to identify which categories are available for a given Resource.<br/>      * `category_group` - (Optional) The name of a Diagnostic Log Category Group for this Resource.<br/>      -> **NOTE:** Not all resources have category groups available.<br/>      -> **NOTE:** Exactly one of `category` or `category_group` must be specified.<br/>    A `metric` block supports the following:<br/>      * `category` - (Required) The name of a Diagnostic Metric Category for this Resource.<br/>      * -> **NOTE:** The Metric Categories available vary depending on the Resource being used. You may wish to use [the `azurerm_monitor_diagnostic_categories` Data Source](../d/monitor\_diagnostic\_categories.html) to identify which categories are available for a given Resource.<br/>      * `enabled` - (Optional) Is this Diagnostic Metric enabled? Defaults to `true`.<br/>    The `timeouts` block allows you to specify [timeouts](https://www.terraform.io/language/resources/syntax#operation-timeouts) for certain actions:<br/>      * `create` - (Defaults to 30 minutes) Used when creating the Diagnostics Setting.<br/>      * `update` - (Defaults to 30 minutes) Used when updating the Diagnostics Setting.<br/>      * `read` - (Defaults to 5 minutes) Used when retrieving the Diagnostics Setting.<br/>      * `delete` - (Defaults to 60 minutes) Used when deleting the Diagnostics Setting.<br/><br/>  Example Input:<pre>diagnostic_settings = {<br/>    "diagnostic" = {<br/>      name                           = "diagnostic_settings"<br/>      target_resource_id             = null<br/>      eventhub_name                  = null<br/>      eventhub_authorization_rule_id = null<br/>      log_analytics_workspace_id     = "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/myResourceGroup/providers/Microsoft.OperationalInsights/workspaces/myLogAnalyticsWorkspace"<br/>      storage_account_id             = "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/myResourceGroup/providers/Microsoft.Network/loadBalancers/my_load_balancer_1"<br/>      log_analytics_destination_type = null<br/>      partner_solution_id            = null<br/>      metric = {<br/>        category = "AllMetrics"<br/>        enabled  = true<br/>      }<br/>    }<br/>  }</pre> | <pre>map(object({<br/>    name                           = string<br/>    target_resource_id             = optional(string)<br/>    eventhub_name                  = optional(string)<br/>    eventhub_authorization_rule_id = optional(string)<br/>    log_analytics_workspace_id     = optional(string)<br/>    storage_account_id             = optional(string)<br/>    log_analytics_destination_type = optional(string)<br/>    partner_solution_id            = optional(string)<br/>    enabled_log = optional(list(object({<br/>      category       = optional(string)<br/>      category_group = optional(string)<br/>    })))<br/>    metric = optional(object({<br/>      category = optional(string, "AllMetrics")<br/>      enabled  = optional(bool)<br/>    }))<br/>    timeouts = optional(object({<br/>      create = optional(string, "30")<br/>      update = optional(string, "30")<br/>      read   = optional(string, "5")<br/>      delete = optional(string, "60")<br/>    }))<br/>  }))</pre> | `null` | no |
+| <a name="input_ip_configurations"></a> [ip\_configurations](#input\_ip\_configurations) | * `ip_configurations` - (Optional) Specify ip configurations for private endpoint<br/>  An `ip_configuration` block supports the following:<br/>    * `name` - (Required) Specifies the Name of the IP Configuration. Changing this forces a new resource to be created.<br/>    * `private_ip_address` - (Required) Specifies the static IP address within the private endpoint's subnet to be used. Changing this forces a new resource to be created.<br/>    * `subresource_name` - (Optional) Specifies the subresource this IP address applies to. `subresource_names` corresponds to `group_id`. Changing this forces a new resource to be created.<br/>    * `member_name` - (Optional) Specifies the member name this IP address applies to. If it is not specified, it will use the value of `subresource_name`. Changing this forces a new resource to be created.<br/>    -> **NOTE:** `member_name` will be required and will not take the value of `subresource_name` in the next major version.<br/>  Example Input:<pre>ip_configurations = {<br/>    ipconfig1= {<br/>      name               = "ipconfig1"  # Example value<br/>      member_name        = "member1"  # Example value<br/>      subresource_name   = "blob"  # Example value<br/>      private_ip_address = "10.0.0.4"  # Example value<br/>    }<br/>  }</pre> | <pre>map(object({<br/>    name               = string<br/>    private_ip_address = string<br/>    subresource_name   = optional(string)<br/>    member_name        = optional(string)<br/>  }))</pre> | `null` | no |
+| <a name="input_lock"></a> [lock](#input\_lock) | * `lock` - (Optional)  Controls the Resource Lock configuration for this resource.<br/>  The following arguments are supported:<br/>    * `kind` - (Required) The type of lock. Possible values are `\"CanNotDelete\"` and `\"ReadOnly\"`.<br/>    * `name` - (Optional) The name of the lock. If not specified, a name will be generated based on the `kind` value. Changing this forces the creation of a new resource.<br/><br/>  Example Input:<pre>lock = {<br/>  kind = "CanNotDelete"<br/>  name = "my-resource-lock"<br/>  }</pre> | <pre>object({<br/>    kind = string<br/>    name = optional(string, null)<br/>  })</pre> | `null` | no |
+| <a name="input_private_dns_zone_group"></a> [private\_dns\_zone\_group](#input\_private\_dns\_zone\_group) | * `private_dns_zone_group` -(Optional) Specify private dns zone group for private endpoint<br/>    A `private_dns_zone_group` block supports the following:<br/>    * `name` - (Required) Specifies the Name of the Private DNS Zone Group.<br/>    * `private_dns_zone_ids` - (Required) Specifies the list of Private DNS Zones to include within the `private_dns_zone_group`.<br/><br/>  Example Input:<pre>private_dns_zone_group = {<br/>    "group1" = {<br/>      name = "example-dns-zone-group"<br/>      private_dns_zone_ids = [<br/>        "/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net"<br/>      ]<br/>    }<br/>  }</pre> | <pre>map(object({<br/>    name                 = string<br/>    private_dns_zone_ids = set(string)<br/>  }))</pre> | `null` | no |
+| <a name="input_role_assignments"></a> [role\_assignments](#input\_role\_assignments) | * `role_assignments` - (Optional) A map of role assignments to create on the private endpoint. The map key is deliberately arbitrary to avoid issues where map keys maybe unknown at plan time. See `var.role_assignments` for more information<br/>  The following arguments are supported:<br/>    * `name` - (Optional) A unique UUID/GUID for this Role Assignment - one will be generated if not specified. Changing this forces a new resource to be created.<br/>    * `scope` - (Required) The scope at which the Role Assignment applies to, such as `/subscriptions/0b1f6471-1bf0-4dda-aec3-111122223333`, `/subscriptions/0b1f6471-1bf0-4dda-aec3-111122223333/resourceGroups/myGroup`, or `/subscriptions/0b1f6471-1bf0-4dda-aec3-111122223333/resourceGroups/myGroup/providers/Microsoft.Compute/virtualMachines/myVM`, or `/providers/Microsoft.Management/managementGroups/myMG`. Changing this forces a new resource to be created.<br/>    * `role_definition_id` - (Optional) The Scoped-ID of the Role Definition. Changing this forces a new resource to be created. Conflicts with `role_definition_name`.<br/>    * `role_definition_name` - (Optional) The name of a built-in Role. Changing this forces a new resource to be created. Conflicts with `role_definition_id`.<br/>    * `principal_id` - (Required) The ID of the Principal (User, Group or Service Principal) to assign the Role Definition to. Changing this forces a new resource to be created.<br/>    ~> **NOTE:** The Principal ID is also known as the Object ID (ie not the "Application ID" for applications).<br/>    * `principal_type` - (Optional) The type of the `principal_id`. Possible values are `User`, `Group` and `ServicePrincipal`. Changing this forces a new resource to be created. It is necessary to explicitly set this attribute when creating role assignments if the principal creating the assignment is constrained by ABAC rules that filters on the PrincipalType attribute.<br/>    ~> **NOTE:** If one of `condition` or `condition_version` is set both fields must be present.<br/>    * `condition` - (Optional) The condition that limits the resources that the role can be assigned to. Changing this forces a new resource to be created.<br/>    * `condition_version` - (Optional) The version of the condition. Possible values are `1.0` or `2.0`. Changing this forces a new resource to be created.<br/>    * `delegated_managed_identity_resource_id` - (Optional) The delegated Azure Resource Id which contains a Managed Identity. Changing this forces a new resource to be created.<br/>    ~> **NOTE:** this field is only used in cross tenant scenario.<br/>    * `description` - (Optional) The description for this Role Assignment. Changing this forces a new resource to be created.<br/>    * `skip_service_principal_aad_check` - (Optional) If the `principal_id` is a newly provisioned `Service Principal` set this value to `true` to skip the `Azure Active Directory` check which may fail due to replication lag. This argument is only valid if the `principal_id` is a `Service Principal` identity. Defaults to `false`.<br/>    ~> **NOTE:** If it is not a `Service Principal` identity it will cause the role assignment to fail.<br/><br/>  Example Input:<pre>role_assignments = {<br/>    "example_assignment" = {<br/>      role_definition_id_or_name = "Contributor"<br/>      principal_id = "/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<identity-name>"<br/>      description = "Assignment for contributor role"<br/>      skip_service_principal_aad_check = false<br/>    }<br/>  }</pre> | <pre>map(object({<br/>    name                                   = optional(string, null)<br/>    scope                                  = string<br/>    role_definition_id                     = optional(string, null)<br/>    role_definition_name                   = optional(string, null)<br/>    principal_id                           = string<br/>    principal_type                         = optional(string, null)<br/>    condition                              = optional(string, null)<br/>    condition_version                      = optional(string, null)<br/>    delegated_managed_identity_resource_id = optional(string, null)<br/>    description                            = optional(string, null)<br/>    skip_service_principal_aad_check       = optional(bool, false)<br/>  }))</pre> | `null` | no |
+| <a name="input_tags"></a> [tags](#input\_tags) | * `tags` - (Optional) A mapping of tags to assign to the resource.<br/><br/>  Example Input:<pre>tags = {<br/>    foo = bar<br/>  }</pre> | `map(any)` | `null` | no |
+| <a name="input_timeouts"></a> [timeouts](#input\_timeouts) | The `timeouts` block allows you to specify [timeouts](https://www.terraform.io/language/resources/syntax#operation-timeouts) for certain actions:<br/>  * `create` - (Defaults to 60 minutes) Used when creating the Subnet.<br/>  * `update` - (Defaults to 60 minutes) Used when updating the Subnet.<br/>  * `read` - (Defaults to 5 minutes) Used when retrieving the Subnet.<br/>  * `delete` - (Defaults to 60 minutes) Used when deleting the Subnet. | <pre>object({<br/>    create = optional(string, "60")<br/>    update = optional(string, "60")<br/>    read   = optional(string, "5")<br/>    delete = optional(string, "60")<br/>  })</pre> | `null` | no |
 
 ## Outputs
 
-No outputs.
+| Name | Description |
+|------|-------------|
+| <a name="output_private_endpoint"></a> [private\_endpoint](#output\_private\_endpoint) | * `name` - Specifies the Name of the Private Endpoint. Changing this forces a new resource to be created.<br/>  * `resource_group_name` - Specifies the Name of the Resource Group within which the Private Endpoint should exist. Changing this forces a new resource to be created.<br/>  * `location` - The supported Azure location where the resource exists. Changing this forces a new resource to be created.<br/>  * `subnet_id` - The ID of the Subnet from which Private IP Addresses will be allocated for this Private Endpoint. Changing this forces a new resource to be created.<br/>  * `custom_network_interface_name` - The custom name of the network interface attached to the private endpoint. Changing this forces a new resource to be created.<br/>  * `private_dns_zone_group` - A private\_dns\_zone\_group block as defined below.<br/>  * `private_service_connection` - (A private\_service\_connection block as defined below.<br/>  * `ip_configuration` - One or more ip\_configuration blocks as defined below. This allows a static IP address to be set for this Private Endpoint, otherwise an address is dynamically allocated from the Subnet.<br/><br/>  A `private_dns_zone_group` block exports:<br/>  * `id` - The ID of the Private DNS Zone Group.<br/>  * `name` - Specifies the Name of the Private DNS Zone Group.<br/>  * `private_dns_zone_ids` - Specifies the list of Private DNS Zones to include within the `private_dns_zone_group`.<br/><br/>  A `private_service_connection` block exports:<br/>  * `private_ip_address` - (Computed)The private IP address associated with the private endpoint, note that you will have a private IP address assigned to the private endpoint even if the connection request was Rejected.<br/>  * `name` - Specifies the Name of the Private Service Connection. Changing this forces a new resource to be created.<br/>  * `is_manual_connection` - Does the Private Endpoint require Manual Approval from the remote resource owner? Changing this forces a new resource to be created.<br/>  * `private_connection_resource_id` - The ID of the Private Link Enabled Remote Resource which this Private Endpoint should be connected to. One of `private_connection_resource_id` or `private_connection_resource_alias` must be specified. Changing this forces a new resource to be created. For a web app or function app slot, the parent web app should be used in this field instead of a reference to the slot itself.<br/>  * `private_connection_resource_alias` - The Service Alias of the Private Link Enabled Remote Resource which this Private Endpoint should be connected to. One of `private_connection_resource_id` or `private_connection_resource_alias` must be specified. Changing this forces a new resource to be created.<br/>  * `subresource_names` - A list of subresource names which the Private Endpoint is able to connect to. `subresource_names` corresponds to `group_id`. Possible values are detailed in the product [documentation](https://docs.microsoft.com/azure/private-link/private-endpoint-overview#private-link-resource) in the `Subresources` column. Changing this forces a new resource to be created.<br/>  * `request_message` - A message passed to the owner of the remote resource when the private endpoint attempts to establish the connection to the remote resource. The provider allows a maximum request message length of `140` characters, however the request message maximum length is dependent on the service the private endpoint is connected to. Only valid if `is_manual_connection` is set to `true`.<br/><br/>  An `ip_configuration` block exports:<br/>  * `name` - Specifies the Name of the IP Configuration. Changing this forces a new resource to be created.<br/>  * `private_ip_address` - Specifies the static IP address within the private endpoint's subnet to be used. Changing this forces a new resource to be created.<br/>  * `subresource_name` - Specifies the subresource this IP address applies to. `subresource_names` corresponds to `group_id`. Changing this forces a new resource to be created.<br/>  * `member_name` - Specifies the member name this IP address applies to. If it is not specified, it will use the value of `subresource_name`. Changing this forces a new resource to be created.<br/><br/>Example output:<pre>output "name" {<br/>  value = module.module_name.private_endpoint.name<br/>}</pre> |
 
 ## Modules
 
 No modules.
 
+## 🌐 Additional Information  
+
+For more information about Azure Private Endpoint and their configurations, refer to the [Azure Private Endpoint documentation](https://learn.microsoft.com/en-us/azure/private-link/private-endpoint-overview/). This module is designed to manage Manages a Private Endpoint.
+
+## 📚 Resources
+
+- [AzureRM Terraform Provider Documentation](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/private_endpoint)
+- [Azure Storage Overview](https://learn.microsoft.com/en-us/azure/private-link/private-endpoint-overview)
+
+## ⚠️ Notes
+
+- Private Endpoints are created within a specific VNet. Services can be accessed privately from within the same VNet or peered VNets.
+- Costs associated with Private Endpoints include charges for the private endpoint resource and any associated DNS zone usage. Regular data transfer costs still apply within Azure regions.
+- Validate your Terraform configuration to ensure that all storage resources are created and configured correctly.
+
+## 🧾 License  
+
+This module is released under the **Apache 2.0 License**. See the [LICENSE](./LICENSE) file for full details.
 <!-- END OF PRE-COMMIT-OPENTOFU DOCS HOOK -->
