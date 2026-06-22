@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/CloudAstro/terraform-azurerm-private-endpoint/compare/v1.0.0...v1.1.0) (2026-06-22)
+
+
+### Features
+
+* update tf and provider version ([de1fd5f](https://github.com/CloudAstro/terraform-azurerm-private-endpoint/commit/de1fd5fbd124f9c102c49c1210a57815fc947ef0))
+
 ## 1.0.0 (2025-06-03)
 
 
